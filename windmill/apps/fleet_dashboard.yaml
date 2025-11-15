@@ -1,0 +1,333 @@
+# Fleet Safety Dashboard App
+# This defines the UI dashboard in Windmill
+
+summary: SMSI Fleet Safety Dashboard
+name: fleet_dashboard
+
+grid:
+  - id: header
+    type: text
+    size:
+      w: 12
+      h: 1
+    content:
+      type: static
+      value: "# SMSI Fleet Safety Dashboard"
+    style:
+      text-align: center
+      font-size: 24px
+      font-weight: bold
+
+  - id: date_selector
+    type: date_input
+    size:
+      w: 3
+      h: 1
+    properties:
+      label: Select Date
+      default: yesterday
+      format: YYYY-MM-DD
+
+  - id: department_filter
+    type: select
+    size:
+      w: 3
+      h: 1
+    properties:
+      label: Department
+      placeholder: All Departments
+      options:
+        type: resource
+        path: queries/get_departments
+
+  - id: refresh_button
+    type: button
+    size:
+      w: 2
+      h: 1
+    properties:
+      label: Refresh Data
+      color: primary
+      action:
+        type: recompute_all
+
+  - id: sync_status
+    type: display_component
+    size:
+      w: 4
+      h: 1
+    properties:
+      label: Last Sync
+      resource:
+        type: runnable
+        path: queries/last_sync_status
+
+  # Key Metrics Row
+  - id: total_drivers_card
+    type: stat_card
+    size:
+      w: 3
+      h: 2
+    properties:
+      title: Active Drivers
+      query:
+        type: postgresql
+        content: |
+          SELECT COUNT(DISTINCT employee_id) as value
+          FROM daily_driver_scores
+          WHERE date = $1::date
+      params:
+        - date_selector.value
+      icon: users
+      color: blue
+
+  - id: avg_score_card
+    type: stat_card
+    size:
+      w: 3
+      h: 2
+    properties:
+      title: Average Safety Score
+      query:
+        type: postgresql
+        content: |
+          SELECT ROUND(AVG(overall_score), 1) as value
+          FROM daily_driver_scores
+          WHERE date = $1::date
+      params:
+        - date_selector.value
+      icon: shield-check
+      color: green
+      suffix: /100
+
+  - id: high_risk_card
+    type: stat_card
+    size:
+      w: 3
+      h: 2
+    properties:
+      title: High Risk Drivers
+      query:
+        type: postgresql
+        content: |
+          SELECT COUNT(*) as value
+          FROM daily_driver_scores
+          WHERE date = $1::date AND overall_score < 70
+      params:
+        - date_selector.value
+      icon: alert-triangle
+      color: red
+
+  - id: total_miles_card
+    type: stat_card
+    size:
+      w: 3
+      h: 2
+    properties:
+      title: Total Miles
+      query:
+        type: postgresql
+        content: |
+          SELECT ROUND(SUM(miles_driven), 0) as value
+          FROM daily_driver_scores
+          WHERE date = $1::date
+      params:
+        - date_selector.value
+      icon: navigation
+      color: purple
+
+  # Department Performance Table
+  - id: dept_performance_table
+    type: table
+    size:
+      w: 6
+      h: 4
+    properties:
+      title: Department Performance
+      query:
+        type: postgresql
+        content: |
+          SELECT 
+            d.name as "Department",
+            ds.active_drivers as "Drivers",
+            ROUND(ds.avg_overall_score, 1) as "Avg Score",
+            ds.high_risk_drivers as "High Risk",
+            ds.medium_risk_drivers as "Medium Risk",
+            ds.low_risk_drivers as "Low Risk",
+            ROUND(ds.total_miles, 0) as "Miles"
+          FROM department_daily_scores ds
+          JOIN departments d ON ds.department_id = d.id
+          WHERE ds.date = $1::date
+            AND ($2::text IS NULL OR d.name = $2)
+          ORDER BY ds.avg_overall_score DESC
+      params:
+        - date_selector.value
+        - department_filter.value
+      searchable: true
+      sortable: true
+      row_color:
+        condition: '"Avg Score" < 70'
+        color: red-100
+
+  # Safety Score Trend Chart
+  - id: score_trend_chart
+    type: chart
+    size:
+      w: 6
+      h: 4
+    properties:
+      title: Safety Score Trends (30 Days)
+      chart_type: line
+      query:
+        type: postgresql
+        content: |
+          SELECT 
+            date,
+            ROUND(AVG(overall_score), 1) as "Overall",
+            ROUND(AVG(brake_score), 1) as "Braking",
+            ROUND(AVG(speed_score), 1) as "Speed",
+            ROUND(AVG(seatbelt_score), 1) as "Seatbelt"
+          FROM daily_driver_scores
+          WHERE date >= CURRENT_DATE - 30
+            AND ($1::integer IS NULL OR employee_id IN (
+              SELECT id FROM employees WHERE department_id = $1
+            ))
+          GROUP BY date
+          ORDER BY date
+      params:
+        - department_filter.value
+      x_axis: date
+      y_axis: ["Overall", "Braking", "Speed", "Seatbelt"]
+
+  # High Risk Drivers Table
+  - id: high_risk_drivers_table
+    type: table
+    size:
+      w: 12
+      h: 4
+    properties:
+      title: Drivers Requiring Attention (Score < 70)
+      query:
+        type: postgresql
+        content: |
+          SELECT 
+            e.first_name || ' ' || e.last_name as "Driver",
+            d.name as "Department",
+            ds.overall_score as "Score",
+            ds.harsh_brake_count as "Harsh Brakes",
+            ds.rapid_accel_count as "Rapid Accel",
+            ds.speeding_count as "Speeding",
+            ds.seatbelt_off_count as "Seatbelt Off",
+            ROUND(ds.miles_driven, 1) as "Miles",
+            v.license_plate as "Vehicle"
+          FROM daily_driver_scores ds
+          JOIN employees e ON ds.employee_id = e.id
+          JOIN vehicles v ON ds.vehicle_id = v.id
+          LEFT JOIN departments d ON e.department_id = d.id
+          WHERE ds.date = $1::date
+            AND ds.overall_score < 70
+            AND ($2::text IS NULL OR d.name = $2)
+          ORDER BY ds.overall_score ASC
+      params:
+        - date_selector.value
+        - department_filter.value
+      searchable: true
+      sortable: true
+      exportable: true
+      row_color:
+        condition: '"Score" < 60'
+        color: red-200
+
+  # Recent Safety Events
+  - id: recent_events_table
+    type: table
+    size:
+      w: 12
+      h: 4
+    properties:
+      title: Recent Safety Events (Last 24 Hours)
+      query:
+        type: postgresql
+        content: |
+          SELECT 
+            se.time as "Time",
+            e.first_name || ' ' || e.last_name as "Driver",
+            d.name as "Department",
+            se.event_type as "Event Type",
+            se.severity as "Severity",
+            v.license_plate as "Vehicle",
+            se.speed_mph as "Speed (mph)",
+            se.location_address as "Location"
+          FROM safety_events se
+          JOIN employees e ON se.employee_id = e.id
+          JOIN vehicles v ON se.vehicle_id = v.id
+          LEFT JOIN departments d ON e.department_id = d.id
+          WHERE se.time >= NOW() - INTERVAL '24 hours'
+            AND ($1::text IS NULL OR d.name = $1)
+            AND se.severity IN ('high', 'critical')
+          ORDER BY se.time DESC
+          LIMIT 50
+      params:
+        - department_filter.value
+      searchable: true
+      sortable: true
+      row_color:
+        condition: '"Severity" = ''critical'''
+        color: red-300
+
+resources:
+  queries:
+    get_departments:
+      type: postgresql
+      content: |
+        SELECT name as label, name as value
+        FROM departments
+        ORDER BY name
+
+    last_sync_status:
+      type: postgresql
+      content: |
+        SELECT 
+          CASE 
+            WHEN completed_at IS NOT NULL 
+            THEN completed_at::text || ' (' || status || ')'
+            ELSE 'In Progress...'
+          END as value
+        FROM sync_log
+        ORDER BY started_at DESC
+        LIMIT 1
+
+actions:
+  manual_sync:
+    type: flow
+    path: flows/daily_fleet_sync
+    params:
+      manual_trigger: true
+    confirmation: Are you sure you want to trigger a manual sync?
+
+  export_report:
+    type: script
+    language: typescript
+    content: |
+      export async function main(date: string, department?: string) {
+        // Generate CSV report
+        const query = `
+          SELECT 
+            e.employee_number,
+            e.first_name || ' ' || e.last_name as name,
+            d.name as department,
+            ds.overall_score,
+            ds.miles_driven,
+            ds.total_events
+          FROM daily_driver_scores ds
+          JOIN employees e ON ds.employee_id = e.id
+          LEFT JOIN departments d ON e.department_id = d.id
+          WHERE ds.date = $1::date
+            AND ($2::text IS NULL OR d.name = $2)
+          ORDER BY d.name, e.last_name
+        `;
+        
+        // In production, this would generate and download a CSV
+        console.log("Exporting report for", date, department || "all departments");
+        return { exported: true };
+      }
