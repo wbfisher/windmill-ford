@@ -97,6 +97,32 @@ Railway Project Structure:
 
 ## Troubleshooting
 
+### "Application failed to respond"
+**This means a port configuration issue.**
+
+**Root Cause:** Railway can't connect to the application on the expected port.
+
+**Solution:**
+1. **Check the deployment logs** for errors:
+   - Click Deployments → Latest → View Logs
+   - Look for "Server listening on port 8000" or similar
+   - Check for database connection errors
+
+2. **Verify DATABASE_URL is set:**
+   - The app won't start without it
+   - Go to Variables tab and confirm `DATABASE_URL=${{windmill-db.DATABASE_URL}}`
+
+3. **Wait for full startup:**
+   - Windmill can take 60-90 seconds to fully start
+   - Railway might timeout before Windmill is ready
+   - Look for "Windmill started" or similar in logs
+
+4. **Check the database is ready:**
+   - Make sure `windmill-db` service shows "Active"
+   - Redeploy the Windmill service after database is confirmed running
+
+**The fix in latest code:** The Dockerfile now properly exposes port 8000 for Railway.
+
 ### "windmill-db.DATABASE_URL is not defined"
 **Fix:** Make sure the PostgreSQL service is named exactly `windmill-db` or update the reference to match your service name.
 
@@ -105,6 +131,9 @@ Railway Project Structure:
 
 ### "Connection refused"
 **Fix:** Both services must be in the same Railway project. Verify they're both visible in your project dashboard.
+
+### "Bad config: DATABASE_URL env var is missing"
+**Fix:** See Step 2 above - add the required environment variables before deploying.
 
 ---
 
