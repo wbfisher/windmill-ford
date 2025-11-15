@@ -14,9 +14,36 @@ Ford Pro API → Windmill Scripts → PostgreSQL → Windmill Dashboard
             Scheduled/Manual Triggers
 ```
 
-## Setup Instructions
+## 🚀 Quick Start (Railway Deployment)
 
-### 1. Railway Deployment
+**Getting the "DATABASE_URL env var is missing" error?** → See [RAILWAY-QUICK-START.md](RAILWAY-QUICK-START.md)
+
+### Step 1: Create Database Service
+1. In Railway Dashboard: **New** → **Database** → **PostgreSQL**
+2. Name it: `windmill-db`
+3. Wait for it to show "Active"
+
+### Step 2: Configure Environment Variables
+Go to your Windmill service → **Variables** tab → Add:
+
+```bash
+DATABASE_URL=${{windmill-db.DATABASE_URL}}
+MODE=standalone
+WM_BASE_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}
+```
+
+See [.env.railway.example](.env.railway.example) for all available variables.
+
+### Step 3: Deploy
+Click **Redeploy** and watch the logs. When successful, access Windmill at your Railway URL.
+
+📖 **Full deployment guide:** [RAILWAY-DEPLOYMENT.md](RAILWAY-DEPLOYMENT.md)
+
+---
+
+## Detailed Setup Instructions
+
+### 1. Railway Deployment (Alternative Method)
 ```bash
 # Install Railway CLI
 npm install -g @railway/cli
@@ -30,10 +57,10 @@ railway up
 ```
 
 ### 2. Environment Variables
-Copy `.env.example` to `.env` and fill in:
+See [.env.railway.example](.env.railway.example) for:
 - Ford Pro API credentials
 - Database connection strings
-- Windmill admin password
+- Windmill configuration
 
 ### 3. Database Setup
 Run the schema migration in `/database/schema.sql`
