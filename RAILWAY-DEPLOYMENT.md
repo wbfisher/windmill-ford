@@ -93,6 +93,38 @@ Follow the instructions in `DEPLOYMENT.md` to:
 
 ## Troubleshooting
 
+### "Healthcheck Failure" Error ⚠️
+**This is the most common issue!**
+
+**Root Cause:** Windmill needs the `DATABASE_URL` to start, but Railway runs healthchecks before the database service is ready.
+
+**Solution:**
+1. **Remove the healthcheck** (already done in latest version)
+2. **Ensure DATABASE_URL is set BEFORE first deployment:**
+   - Go to Variables tab
+   - Add: `DATABASE_URL=${{windmill-db.DATABASE_URL}}`
+   - Make sure the `windmill-db` service exists and is running
+   - Redeploy
+
+3. **If still failing, check the logs:**
+   - Click on your deployment → View Logs
+   - Look for database connection errors
+   - Common error: `could not connect to server: Connection refused`
+
+4. **Wait for database initialization:**
+   - PostgreSQL services can take 30-60 seconds to be fully ready
+   - Redeploy the Windmill service after databases are confirmed running
+
+**Quick Fix:**
+```bash
+# In Railway:
+# 1. Delete the Windmill service
+# 2. Ensure both PostgreSQL services are running and healthy
+# 3. Recreate Windmill service from GitHub
+# 4. Add environment variables IMMEDIATELY
+# 5. Deploy
+```
+
 ### "start.sh not found" Error
 **Solution:** Make sure `railway.json` is committed to your repo. Railway should use the Dockerfile.
 
@@ -107,6 +139,8 @@ Follow the instructions in `DEPLOYMENT.md` to:
 1. Verify both PostgreSQL services are running
 2. Check that `DATABASE_URL` and `FLEET_DATABASE_URL` variables are set
 3. Make sure the databases are referenced correctly: `${{windmill-db.DATABASE_URL}}`
+4. Verify the PostgreSQL services are in the same Railway project
+5. Check there are no typos in the variable references
 
 ### Port Issues
 **Solution:** Railway automatically sets the `PORT` variable. The Dockerfile is configured to use port 8000, which Windmill expects.
@@ -118,9 +152,10 @@ Follow the instructions in `DEPLOYMENT.md` to:
 ```
 
 Common issues:
-- Missing environment variables
-- Database not ready (wait 30 seconds and retry)
-- Invalid Ford Pro credentials
+- Missing `DATABASE_URL` environment variable (MOST COMMON)
+- Database not ready (wait 60 seconds and redeploy)
+- Invalid Ford Pro credentials (optional - won't prevent startup)
+- Wrong database service name in variables
 
 ## Architecture on Railway
 
