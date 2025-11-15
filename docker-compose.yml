@@ -1,0 +1,64 @@
+# Docker Compose for Local Development
+# Use this to test before deploying to Railway
+
+version: '3.8'
+
+services:
+  windmill:
+    image: ghcr.io/windmill-labs/windmill:latest
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://windmill:windmill@windmill-db/windmill?sslmode=disable
+      MODE: standalone
+      WM_BASE_URL: http://localhost:8000
+      FLEET_DATABASE_URL: postgresql://smsi:fleet123@fleet-db/fleet_metrics?sslmode=disable
+      DISABLE_SECURE_COOKIES: true
+    depends_on:
+      windmill-db:
+        condition: service_healthy
+      fleet-db:
+        condition: service_healthy
+    volumes:
+      - ./windmill:/usr/src/app
+
+  windmill-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: windmill
+      POSTGRES_PASSWORD: windmill
+      POSTGRES_DB: windmill
+    ports:
+      - "5432:5432"
+    volumes:
+      - windmill_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U windmill"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  fleet-db:
+    image: timescale/timescaledb:latest-pg15
+    environment:
+      POSTGRES_USER: smsi
+      POSTGRES_PASSWORD: fleet123
+      POSTGRES_DB: fleet_metrics
+    ports:
+      - "5433:5432"
+    volumes:
+      - fleet_db:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smsi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  windmill_db:
+  fleet_db:
+
+networks:
+  default:
+    name: smsi-fleet
