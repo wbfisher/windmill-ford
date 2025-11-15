@@ -1,0 +1,12 @@
+# Railway ignore file
+.env
+.env.local
+.env*.local
+node_modules/
+*.log
+.DS_Store
+.git/
+*.md
+docker-compose.yml
+setup.sh
+fix-railway-error.sh
