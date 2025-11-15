@@ -1,0 +1,190 @@
+# Daily Fleet Sync Flow
+# Orchestrates the complete data sync process from Ford Pro to dashboard
+
+summary: Daily sync of fleet safety metrics from Ford Pro API
+description: |
+  This flow runs daily to:
+  1. Fetch vehicle and driver data from Ford Pro
+  2. Calculate safety scores
+  3. Generate department rollups
+  4. Send alerts for critical events
+
+value:
+  modules:
+    - id: check_last_sync
+      summary: Check when last successful sync occurred
+      value:
+        type: script
+        language: postgresql
+        content: |
+          SELECT 
+            MAX(completed_at) as last_sync,
+            CURRENT_TIMESTAMP - MAX(completed_at) as time_since_sync
+          FROM sync_log
+          WHERE status = 'completed'
+      
+    - id: ford_pro_sync
+      summary: Sync data from Ford Pro API
+      value:
+        type: script
+        path: scripts/ford_pro_sync.ts
+        input_transforms:
+          sync_type: 
+            type: javascript
+            expr: |
+              // If last sync was more than 24 hours ago, do full sync
+              const hoursSinceSync = flow_input.check_last_sync?.time_since_sync?.hours || 999;
+              return hoursSinceSync > 24 ? 'full' : 'incremental';
+          days_to_sync:
+            type: javascript
+            expr: |
+              // For incremental syncs, get 2 days of data
+              // For full syncs, get 7 days
+              const syncType = flow_input.ford_pro_sync?.sync_type || 'incremental';
+              return syncType === 'full' ? 7 : 2;
+    
+    - id: check_high_risk_events
+      summary: Check for critical safety events
+      value:
+        type: script
+        language: postgresql
+        content: |
+          SELECT 
+            e.first_name || ' ' || e.last_name as driver_name,
+            e.email,
+            d.name as department,
+            se.event_type,
+            se.severity,
+            se.time,
+            v.license_plate,
+            v.make || ' ' || v.model as vehicle
+          FROM safety_events se
+          JOIN employees e ON se.employee_id = e.id
+          JOIN vehicles v ON se.vehicle_id = v.id
+          LEFT JOIN departments d ON e.department_id = d.id
+          WHERE se.time >= NOW() - INTERVAL '24 hours'
+            AND se.severity IN ('high', 'critical')
+          ORDER BY se.time DESC
+      
+    - id: calculate_daily_metrics
+      summary: Calculate daily performance metrics
+      value:
+        type: script
+        language: postgresql
+        content: |
+          WITH daily_stats AS (
+            SELECT 
+              COUNT(DISTINCT employee_id) as total_drivers,
+              AVG(overall_score) as avg_score,
+              COUNT(CASE WHEN overall_score < 70 THEN 1 END) as high_risk_count,
+              SUM(miles_driven) as total_miles
+            FROM daily_driver_scores
+            WHERE date = CURRENT_DATE - 1
+          )
+          SELECT 
+            total_drivers,
+            ROUND(avg_score, 2) as avg_score,
+            high_risk_count,
+            ROUND(total_miles, 2) as total_miles,
+            ROUND(total_miles::numeric / NULLIF(total_drivers, 0), 2) as miles_per_driver
+          FROM daily_stats
+    
+    - id: send_alerts
+      summary: Send alerts for high-risk events
+      value:
+        type: script
+        language: typescript
+        content: |
+          export async function main(high_risk_events: any[], daily_metrics: any) {
+            if (!high_risk_events || high_risk_events.length === 0) {
+              console.log("No high-risk events to report");
+              return { alerts_sent: 0 };
+            }
+            
+            // Group events by department
+            const eventsByDept = high_risk_events.reduce((acc, event) => {
+              const dept = event.department || 'Unassigned';
+              if (!acc[dept]) acc[dept] = [];
+              acc[dept].push(event);
+              return acc;
+            }, {});
+            
+            // In production, this would send emails or Slack messages
+            // For now, just log the alerts
+            console.log("=== SAFETY ALERTS ===");
+            console.log(`High-risk events in last 24 hours: ${high_risk_events.length}`);
+            
+            for (const [dept, events] of Object.entries(eventsByDept)) {
+              console.log(`\n${dept} Department:`);
+              for (const event of events as any[]) {
+                console.log(`  - ${event.driver_name}: ${event.event_type} (${event.severity}) at ${event.time}`);
+                console.log(`    Vehicle: ${event.vehicle} (${event.license_plate})`);
+              }
+            }
+            
+            console.log("\n=== DAILY METRICS ===");
+            console.log(`Active Drivers: ${daily_metrics.total_drivers}`);
+            console.log(`Average Safety Score: ${daily_metrics.avg_score}`);
+            console.log(`High Risk Drivers: ${daily_metrics.high_risk_count}`);
+            console.log(`Total Miles: ${daily_metrics.total_miles}`);
+            
+            return {
+              alerts_sent: high_risk_events.length,
+              departments_affected: Object.keys(eventsByDept).length
+            };
+          }
+        input_transforms:
+          high_risk_events:
+            type: javascript
+            expr: flow_input.check_high_risk_events
+          daily_metrics:
+            type: javascript  
+            expr: flow_input.calculate_daily_metrics?.[0] || {}
+
+schedule:
+  cron: "0 6 * * *"  # Run at 6 AM daily
+  timezone: "America/Chicago"
+
+schema:
+  $schema: 'https://json-schema.org/draft/2020-12/schema'
+  type: object
+  properties:
+    manual_trigger:
+      type: boolean
+      description: Set to true to force a full sync
+      default: false
+    notification_emails:
+      type: array
+      description: Additional emails to notify (optional)
+      items:
+        type: string
+        format: email
+
+ws_error_handler:
+  - id: log_error
+    summary: Log sync failure
+    value:
+      type: script
+      language: postgresql
+      content: |
+        INSERT INTO sync_log (sync_type, status, error_message, metadata)
+        VALUES ('scheduled', 'failed', $1::text, $2::jsonb)
+      input_transforms:
+        $1:
+          type: javascript
+          expr: error.message
+        $2:
+          type: javascript
+          expr: JSON.stringify({ error: error.stack, flow_id: flow.id })
+
+  - id: send_error_notification
+    summary: Notify admin of sync failure
+    value:
+      type: script
+      language: typescript
+      content: |
+        export async function main(error: any) {
+          // In production, send email/Slack notification
+          console.error("FLEET SYNC FAILED:", error);
+          return { notified: true };
+        }
