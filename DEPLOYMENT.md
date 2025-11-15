@@ -7,12 +7,7 @@
 
 ## Step 1: Deploy to Railway
 
-### Option A: Deploy via Railway Button (Easiest)
-1. Push this code to your GitHub repository
-2. Add a "Deploy on Railway" button to your repo
-3. Click the button and Railway will auto-configure everything
-
-### Option B: Manual Deployment
+### Option A: Using Docker Compose (Recommended)
 ```bash
 # Install Railway CLI
 npm install -g @railway/cli
@@ -23,12 +18,31 @@ railway login
 # Initialize new project
 railway init
 
-# Link to this directory
-railway link
+# Deploy using docker-compose
+railway up --docker-compose
 
-# Deploy the stack
-railway up
+# Railway will use the docker-compose.yml file
 ```
+
+### Option B: Deploy Services Individually
+```bash
+# Create project
+railway init
+
+# Deploy each service
+railway add
+# Select "Empty Service" and name it "windmill"
+# Repeat for "windmill-db" and "fleet-db"
+
+# Configure each service in Railway dashboard
+```
+
+### Option C: GitHub Integration
+1. Push this code to your GitHub repository
+2. In Railway dashboard, click "New Project"
+3. Select "Deploy from GitHub repo"
+4. Choose your repository
+5. Railway will detect docker-compose.yml
 
 ## Step 2: Configure Environment Variables
 
