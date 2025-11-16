@@ -41,8 +41,8 @@ echo "✓ Mode: ${MODE:-standalone}"
 echo "✓ Base URL: ${WM_BASE_URL}"
 echo ""
 
-# Start Windmill using the original entrypoint
-exec /entrypoint.sh
+# Start Windmill (the default command from the base image)
+exec windmill
 EOF
 
 RUN chmod +x /startup.sh
