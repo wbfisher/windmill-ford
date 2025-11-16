@@ -45,7 +45,14 @@ echo ""
 exec windmill
 EOF
 
-RUN chmod +x /startup.sh
+# Create healthcheck script
+COPY <<'EOF' /healthcheck.sh
+#!/bin/bash
+# Healthcheck script that uses the PORT environment variable
+curl -f http://localhost:${PORT:-8000}/api/version || exit 1
+EOF
+
+RUN chmod +x /startup.sh /healthcheck.sh
 
 # Windmill listens on port 8000 by default
 EXPOSE 8000
@@ -56,8 +63,9 @@ ENV PORT=8000
 ENV WM_PORT=8000
 
 # Add healthcheck to help Railway know when the service is ready
+# Uses /healthcheck.sh which reads the PORT environment variable
 HEALTHCHECK --interval=10s --timeout=5s --start-period=90s --retries=3 \
-    CMD curl -f http://localhost:8000/api/version || exit 1
+    CMD ["/healthcheck.sh"]
 
 # Use our startup script
 CMD ["/startup.sh"]
