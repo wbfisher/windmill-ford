@@ -54,13 +54,10 @@ EOF
 
 RUN chmod +x /startup.sh /healthcheck.sh
 
-# Windmill listens on port 8000 by default
-EXPOSE 8000
-
-# Set environment to ensure Windmill uses port 8000
-# Railway will route external traffic to this port
-ENV PORT=8000
-ENV WM_PORT=8000
+# Railway will set PORT dynamically (usually 8080)
+# Don't set a default PORT - let Railway control it
+# EXPOSE is just documentation, Railway routes based on actual listening port
+EXPOSE 8080
 
 # Add healthcheck to help Railway know when the service is ready
 # Uses /healthcheck.sh which reads the PORT environment variable
